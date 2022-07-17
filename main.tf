@@ -8,6 +8,20 @@ provider "aws" {
   }
 }
 
+resource "random_id" "id" {
+  byte_length = 8
+}
+
+
+locals {
+  name  = (var.name != "" ? var.name : random_id.id.hex)
+  owner = var.team
+  common_tags = {
+    Owner = local.owner
+    Name  = local.name
+  }
+}
+
 
 
 data "aws_ami" "ubuntu" {
@@ -29,19 +43,23 @@ resource "aws_vpc" "my_vpc" {
   cidr_block           = var.cidr_vpc
   enable_dns_support   = true
   enable_dns_hostnames = true
+  tags                 = local.common_tags #added
 }
 
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.my_vpc.id
+  tags   = local.common_tags #added
 }
 
 resource "aws_subnet" "subnet_public" {
   vpc_id     = aws_vpc.my_vpc.id
   cidr_block = var.cidr_subnet
+  tags       = local.common_tags #added
 }
 
 resource "aws_route_table" "rtb_public" {
   vpc_id = aws_vpc.my_vpc.id
+  tags   = local.common_tags #added
 
   route {
     cidr_block = "0.0.0.0/0"
@@ -72,16 +90,27 @@ resource "aws_elb" "learn" {
     interval            = 30
   }
 
-  instances                   = [aws_instance.ubuntu.id]
+  #instances                   = [aws_instance.ubuntu.id]
+  instances = aws_instance.ubuntu[*].id
+
   idle_timeout                = 400
   connection_draining         = true
   connection_draining_timeout = 400
+
+  tags = local.common_tags #added
 }
 
-
 resource "aws_instance" "ubuntu" {
-  ami                         = data.aws_ami.ubuntu.id
-  instance_type               = "t2.micro"
-  associate_public_ip_address = true
-  subnet_id                   = aws_subnet.subnet_public.id
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t2.micro"
+  #  associate_public_ip_address = true
+  subnet_id = aws_subnet.subnet_public.id
+
+  #added
+  count                       = var.high_availability == true ? 3 : 1
+  associate_public_ip_address = (count.index == 0 ? true : false) #only the first instance is assigned a public IP address.
+
+  #tags = local.common_tags #added
+  #added
+  tags = merge(local.common_tags)
 }
